@@ -1,0 +1,19 @@
+{
+  "name": "レシート家計簿",
+  "short_name": "レシート家計簿",
+  "description": "レシートを撮影してGoogleドライブにアップロードするアプリ",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#ffffff",
+  "theme_color": "#4285F4",
+  "icons": [
+    {
+      "src": "icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}

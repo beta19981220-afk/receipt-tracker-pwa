@@ -1,0 +1,278 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>レシート家計簿</title>
+<link rel="manifest" href="manifest.json">
+<link rel="icon" href="icon.svg" type="image/svg+xml">
+<meta name="theme-color" content="#4285F4">
+<style>
+  :root {
+    --blue: #4285F4;
+    --green: #34A853;
+    --red: #EA4335;
+    --bg: #F5F7FA;
+    --text: #1F2430;
+    --muted: #6B7280;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: -apple-system, BlinkMacSystemFont, "Hiragino Sans", "Yu Gothic", sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 24px 20px 40px;
+  }
+  h1 {
+    font-size: 20px;
+    margin: 12px 0 4px;
+  }
+  p.sub {
+    color: var(--muted);
+    font-size: 14px;
+    margin: 0 0 28px;
+    text-align: center;
+  }
+  #camera-btn {
+    width: 140px;
+    height: 140px;
+    border-radius: 50%;
+    background: var(--blue);
+    border: none;
+    color: white;
+    font-size: 44px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    box-shadow: 0 6px 18px rgba(66,133,244,0.35);
+    cursor: pointer;
+    transition: transform 0.1s ease;
+  }
+  #camera-btn:active { transform: scale(0.95); }
+  #file-input { display: none; }
+  #status {
+    margin-top: 28px;
+    width: 100%;
+    max-width: 360px;
+    min-height: 24px;
+    text-align: center;
+    font-size: 14px;
+  }
+  .status-ok { color: var(--green); font-weight: 600; }
+  .status-err { color: var(--red); font-weight: 600; }
+  .status-progress { color: var(--muted); }
+  #preview {
+    margin-top: 20px;
+    max-width: 240px;
+    max-height: 240px;
+    border-radius: 12px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.12);
+    display: none;
+  }
+  #history {
+    margin-top: 32px;
+    width: 100%;
+    max-width: 360px;
+  }
+  #history h2 {
+    font-size: 13px;
+    color: var(--muted);
+    font-weight: 600;
+    margin-bottom: 8px;
+  }
+  .history-item {
+    background: white;
+    border-radius: 10px;
+    padding: 10px 14px;
+    margin-bottom: 8px;
+    font-size: 13px;
+    display: flex;
+    justify-content: space-between;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.06);
+  }
+  .history-item .time { color: var(--muted); }
+</style>
+</head>
+<body>
+
+<h1>📷 レシート家計簿</h1>
+<p class="sub">レシートを撮影するとGoogleドライブに<br>自動でアップロードされます</p>
+
+<button id="camera-btn">📷</button>
+<input type="file" id="file-input" accept="image/*" capture="environment">
+
+<img id="preview" alt="プレビュー">
+<div id="status"></div>
+
+<div id="history">
+  <h2>アップロード履歴(この端末での直近分)</h2>
+  <div id="history-list"></div>
+</div>
+
+<script src="https://accounts.google.com/gsi/client" async defer></script>
+<script>
+// ==== 設定項目 ====
+const CLIENT_ID = "189513279782-if6rmijiem70ergl1cv3vhmnfkpkckue.apps.googleusercontent.com";
+const FOLDER_ID = "1ZLlpLJFJFMMZt3hszoCJBPGwO3BfmW3i";
+const SCOPE = "https://www.googleapis.com/auth/drive.file";
+// ==================
+
+const cameraBtn = document.getElementById("camera-btn");
+const fileInput = document.getElementById("file-input");
+const statusEl = document.getElementById("status");
+const previewEl = document.getElementById("preview");
+const historyList = document.getElementById("history-list");
+
+let tokenClient;
+let accessToken = null;
+let tokenExpiry = 0;
+
+function setStatus(text, type) {
+  statusEl.textContent = text;
+  statusEl.className = type ? "status-" + type : "";
+}
+
+function initTokenClient() {
+  tokenClient = google.accounts.oauth2.initTokenClient({
+    client_id: CLIENT_ID,
+    scope: SCOPE,
+    callback: "" // 呼び出し時に動的に設定
+  });
+}
+
+window.addEventListener("load", () => {
+  // Google Identity Servicesのスクリプト読み込みを待つ
+  const waitForGis = setInterval(() => {
+    if (window.google && google.accounts && google.accounts.oauth2) {
+      clearInterval(waitForGis);
+      initTokenClient();
+    }
+  }, 100);
+  renderHistory();
+});
+
+function getAccessToken() {
+  return new Promise((resolve, reject) => {
+    if (accessToken && Date.now() < tokenExpiry) {
+      resolve(accessToken);
+      return;
+    }
+    tokenClient.callback = (resp) => {
+      if (resp.error) {
+        reject(resp);
+        return;
+      }
+      accessToken = resp.access_token;
+      tokenExpiry = Date.now() + (resp.expires_in - 60) * 1000;
+      resolve(accessToken);
+    };
+    tokenClient.requestAccessToken({ prompt: "" });
+  });
+}
+
+cameraBtn.addEventListener("click", () => {
+  fileInput.click();
+});
+
+fileInput.addEventListener("change", async () => {
+  const file = fileInput.files[0];
+  if (!file) return;
+
+  previewEl.src = URL.createObjectURL(file);
+  previewEl.style.display = "block";
+  setStatus("Googleにログイン中...", "progress");
+
+  try {
+    const token = await getAccessToken();
+    await uploadToDrive(file, token);
+  } catch (err) {
+    console.error(err);
+    setStatus("エラーが発生しました。もう一度お試しください", "err");
+  } finally {
+    fileInput.value = "";
+  }
+});
+
+async function uploadToDrive(file, token) {
+  setStatus("アップロード中...", "progress");
+
+  const now = new Date();
+  const filename = "receipt_" + now.toISOString().replace(/[:.]/g, "-") + ".jpg";
+
+  const metadata = {
+    name: filename,
+    parents: [FOLDER_ID]
+  };
+
+  const boundary = "-------receipttracker" + Date.now();
+  const metadataPart =
+    `--${boundary}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n${JSON.stringify(metadata)}\r\n`;
+  const filePart = `--${boundary}\r\nContent-Type: ${file.type || "image/jpeg"}\r\n\r\n`;
+  const closing = `\r\n--${boundary}--`;
+
+  const fileBuffer = await file.arrayBuffer();
+  const encoder = new TextEncoder();
+  const body = new Blob([
+    encoder.encode(metadataPart),
+    encoder.encode(filePart),
+    fileBuffer,
+    encoder.encode(closing)
+  ]);
+
+  const res = await fetch(
+    "https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id,name",
+    {
+      method: "POST",
+      headers: {
+        Authorization: "Bearer " + token,
+        "Content-Type": `multipart/related; boundary=${boundary}`
+      },
+      body: body
+    }
+  );
+
+  if (!res.ok) {
+    const errText = await res.text();
+    throw new Error("Upload failed: " + errText);
+  }
+
+  const data = await res.json();
+  setStatus("✅ アップロード完了: " + data.name, "ok");
+  addHistory(data.name);
+}
+
+function addHistory(name) {
+  const history = JSON.parse(localStorage.getItem("uploadHistory") || "[]");
+  history.unshift({ name, time: new Date().toLocaleString("ja-JP") });
+  localStorage.setItem("uploadHistory", JSON.stringify(history.slice(0, 10)));
+  renderHistory();
+}
+
+function renderHistory() {
+  const history = JSON.parse(localStorage.getItem("uploadHistory") || "[]");
+  historyList.innerHTML = "";
+  if (history.length === 0) {
+    historyList.innerHTML = '<p style="color:#9AA1AC;font-size:13px;">まだアップロード履歴はありません</p>';
+    return;
+  }
+  history.forEach((item) => {
+    const div = document.createElement("div");
+    div.className = "history-item";
+    div.innerHTML = `<span>${item.name}</span><span class="time">${item.time}</span>`;
+    historyList.appendChild(div);
+  });
+}
+
+if ("serviceWorker" in navigator) {
+  window.addEventListener("load", () => {
+    navigator.serviceWorker.register("service-worker.js").catch(console.error);
+  });
+}
+</script>
+</body>
+</html>
