@@ -157,9 +157,19 @@ def move_to_processed(file_id, processed_folder_id):
         fields="id, parents",
     ).execute()
 
-
+#デバック
+def debug_list_visible_files():
+    results = drive_service.files().list(
+        pageSize=20, fields="files(id, name, mimeType, parents, trashed)"
+    ).execute()
+    files = results.get("files", [])
+    print(f"サービスアカウントから見えるファイル数: {len(files)}")
+    for f in files:
+        print(f"  - 名前: {f['name']} / 種類: {f['mimeType']} / 親フォルダ: {f.get('parents')} / ゴミ箱: {f.get('trashed')}")
 #本体
 def main():
+    debug_list_visible_files()  # ← 一時的に追加
+
     processed_folder_id = get_or_create_processed_folder()
     files = get_unprocessed_files()
 
