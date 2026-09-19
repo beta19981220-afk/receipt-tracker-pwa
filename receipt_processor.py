@@ -7,7 +7,7 @@ from google.oauth2.service_account import Credentials
 from googleapiclient.discovery import build
 import gspread
 from google import genai
-form google.genai import types
+from google.genai import types
 
 import io
 from googleapiclient.http import MediaIoBaseDownload
