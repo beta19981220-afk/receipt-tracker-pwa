@@ -111,7 +111,7 @@ itemsには、レシートに書かれている商品を1つずつ全て含め�
 """
 
     response = gemini_client.models.generate_content(
-        model="gemini-2.5-flash",
+        model="gemini-3.6-flash",
         contents=[
             types.Part.from_bytes(data=image_bytes, mime_type=mime_type),
             prompt,
