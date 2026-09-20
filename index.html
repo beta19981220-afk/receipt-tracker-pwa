@@ -74,6 +74,42 @@
     box-shadow: 0 2px 8px rgba(0,0,0,0.12);
     display: none;
   }
+  #result {
+    margin-top: 20px;
+    width: 100%;
+    max-width: 360px;
+    background: white;
+    border-radius: 12px;
+    padding: 16px;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.06);
+    display: none;
+  }
+  #result h2 {
+    font-size: 13px;
+    color: var(--muted);
+    font-weight: 600;
+    margin: 0 0 8px;
+  }
+  #result-items div {
+    font-size: 14px;
+    padding: 4px 0;
+    border-bottom: 1px solid #F0F1F3;
+  }
+  #result-total {
+    font-weight: 700;
+    margin-top: 8px;
+  }
+  #copy-btn {
+    margin-top: 12px;
+    width: 100%;
+    padding: 10px;
+    border: none;
+    border-radius: 8px;
+    background: var(--blue);
+    color: white;
+    font-size: 14px;
+    cursor: pointer;
+  }
   #history {
     margin-top: 32px;
     width: 100%;
@@ -109,6 +145,13 @@
 <img id="preview" alt="プレビュー">
 <div id="status"></div>
 
+<div id="result">
+  <h2>読み取り結果</h2>
+  <div id="result-items"></div>
+  <div id="result-total"></div>
+  <button id="copy-btn">📋 コピー</button>
+</div>
+
 <div id="history">
   <h2>アップロード履歴(この端末での直近分)</h2>
   <div id="history-list"></div>
@@ -119,7 +162,14 @@
 // ==== 設定項目 ====
 const CLIENT_ID = "189513279782-if6rmijiem70ergl1cv3vhmnfkpkckue.apps.googleusercontent.com";
 const FOLDER_ID = "1ZLlpLJFJFMMZt3hszoCJBPGwO3BfmW3i";
-const SCOPE = "https://www.googleapis.com/auth/drive.file";
+const SPREADSHEET_ID = "1P4-_FcJeeJ7wP-vyzfF6EzrlPVTFprORk3OQL-fZc6o";
+const SCOPE = "https://www.googleapis.com/auth/drive.file https://www.googleapis.com/auth/spreadsheets.readonly";
+
+// GitHub Actionsを即時起動するための設定(権限を絞ったFine-grained PATに差し替えてください)
+const GITHUB_TOKEN = "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";
+const GITHUB_OWNER = "beta19981220-afk";
+const GITHUB_REPO = "receipt-tracker-pwa";
+const GITHUB_WORKFLOW_FILE = "process-receipts.yml";
 // ==================
 
 const cameraBtn = document.getElementById("camera-btn");
@@ -183,6 +233,7 @@ fileInput.addEventListener("change", async () => {
   const file = fileInput.files[0];
   if (!file) return;
 
+  document.getElementById("result").style.display = "none";
   previewEl.src = URL.createObjectURL(file);
   previewEl.style.display = "block";
   setStatus("Googleにログイン中...", "progress");
@@ -242,8 +293,94 @@ async function uploadToDrive(file, token) {
   }
 
   const data = await res.json();
-  setStatus("✅ アップロード完了: " + data.name, "ok");
+  setStatus("✅ アップロード完了。解析を開始します…", "progress");
   addHistory(data.name);
+  triggerWorkflow();
+
+  const rows = await pollForResult(data.name);
+  if (rows) {
+    setStatus("✅ 解析完了", "ok");
+    showResult(rows);
+  } else {
+    setStatus("⏳ 時間がかかっています。あとでスプレッドシートを確認してください", "err");
+  }
+}
+
+async function triggerWorkflow() {
+  try {
+    const res = await fetch(
+      `https://api.github.com/repos/${GITHUB_OWNER}/${GITHUB_REPO}/actions/workflows/${GITHUB_WORKFLOW_FILE}/dispatches`,
+      {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${GITHUB_TOKEN}`,
+          Accept: "application/vnd.github+json"
+        },
+        body: JSON.stringify({ ref: "main" })
+      }
+    );
+
+    if (!res.ok) {
+      const errText = await res.text();
+      setStatus("⚠️ GitHub起動失敗: " + res.status + " " + errText, "err");
+    }
+  } catch (err) {
+    setStatus("⚠️ GitHub起動失敗(通信エラー): " + err.message, "err");
+  }
+}
+
+async function pollForResult(fileName, maxTries = 30, intervalMs = 3000) {
+  const token = await getAccessToken();
+
+  for (let i = 0; i < maxTries; i++) {
+    await new Promise((r) => setTimeout(r, intervalMs));
+    setStatus(`解析中です…(${i + 1}回目確認中)`, "progress");
+
+    const res = await fetch(
+      `https://sheets.googleapis.com/v4/spreadsheets/${SPREADSHEET_ID}/values/A:F`,
+      { headers: { Authorization: "Bearer " + token } }
+    );
+    const data = await res.json();
+    const rows = data.values || [];
+
+    const matched = rows.filter((row) => row[5] === fileName);
+    if (matched.length > 0) {
+      return matched;
+    }
+  }
+  return null;
+}
+
+function showResult(rows) {
+  const resultEl = document.getElementById("result");
+  const itemsEl = document.getElementById("result-items");
+  const totalEl = document.getElementById("result-total");
+  itemsEl.innerHTML = "";
+
+  let total = 0;
+  let copyText = "";
+
+  rows.forEach((row) => {
+    const name = row[2] || "(品名不明)";
+    const amount = Number(row[3]) || 0;
+    total += amount;
+
+    const line = document.createElement("div");
+    line.textContent = `${name}: ${amount}円`;
+    itemsEl.appendChild(line);
+
+    copyText += `${name}\t${amount}円\n`;
+  });
+  copyText += `合計: ${total}円`;
+
+  totalEl.textContent = `合計: ${total}円`;
+  resultEl.style.display = "block";
+
+  document.getElementById("copy-btn").onclick = () => {
+    navigator.clipboard.writeText(copyText).then(() => {
+      setStatus("📋 結果をコピーしました", "ok");
+    });
+  };
 }
 
 function addHistory(name) {
