@@ -1,32 +1,28 @@
-
-Process receipts · YML
 name: Process Receipts
- 
+
 on:
   schedule:
-    # UTC基準。UTC 0,10,20,30,40,50分 = 日本時間(JST)で毎時0,10,20,30,40,50分に実行
     - cron: "*/5 * * * *"
   workflow_dispatch: {}
- 
+
 jobs:
   process:
     runs-on: ubuntu-latest
     steps:
-      - name: リポジトリをチェックアウト
+      - name: checkout
         uses: actions/checkout@v4
- 
-      - name: Pythonをセットアップ
+
+      - name: setup python
         uses: actions/setup-python@v5
         with:
           python-version: "3.12"
- 
-      - name: ライブラリをインストール
+
+      - name: install dependencies
         run: pip install -r requirements.txt
- 
-      - name: レシート処理スクリプトを実行
+
+      - name: run receipt processor
         env:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           SPREADSHEET_ID: ${{ secrets.SPREADSHEET_ID }}
           GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
         run: python receipt_processor.py
- 
