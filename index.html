@@ -320,12 +320,11 @@ async function triggerWorkflow() {
       }
     );
 
-    if (!res.ok) {
-      const errText = await res.text();
-      setStatus("⚠️ GitHub起動失敗: " + res.status + " " + errText, "err");
-    }
+    const bodyText = await res.text();
+    alert("GitHub応答: ステータス=" + res.status + " 内容=" + bodyText);
+
   } catch (err) {
-    setStatus("⚠️ GitHub起動失敗(通信エラー): " + err.message, "err");
+    alert("通信エラー: " + err.message);
   }
 }
 
