@@ -102,7 +102,8 @@ def extract_receipt_data(image_bytes, mime_type):
     {
       "name": "商品名",
       "amount": 金額(数値のみ。カンマや円マークは含めない),
-      "category": "食費・日用品・交通費・交際費・その他 のいずれか"
+      "category": "食費・日用品・交通費・交際費・その他 のいずれか",
+      "pay": "支払い方法(クレジットカード、現金、バーコード決済、電子決済 のいずれか)"
     }
   ]
 }
@@ -138,6 +139,7 @@ def append_to_sheet(data, file_name):
             item.get("name"),
             item.get("amount"),
             item.get("category"),
+            item.get("pay"),
             file_name,
         ])
 
